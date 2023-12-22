@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from torchvision.models import vgg19_bn
 from typing import List, Callable, Union, Any, TypeVar, Tuple
 
 class VAE(nn.Module):
@@ -143,6 +144,53 @@ class VAELoss(nn.Module):
 
         return loss
     
+class DFCVAELoss(nn.Module):
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.feature_network = vgg19_bn().cuda()
+        self.feature_network.load_state_dict(torch.load('params/vgg19_bn-c79401a0.pth'))
+
+        for param in self.feature_network.parameters():
+            param.requires_grad = False
+
+        self.feature_network.eval()
+
+    def feature_extract(self, input: torch.Tensor) -> List[torch.Tensor]:
+        feature_layers = ['14', '24', '34', '43']
+        features = []
+
+        result = input
+
+        for (key, module) in self.feature_network.features._modules.items():
+            result = module(result)
+            if(key in feature_layers):
+                features.append(result)
+
+        return features
+    
+    def forward(self, *args, kld_weight = 0.00025):
+        recons = args[0]
+        input = args[1]
+        mu = args[2]
+        logvar = args[3]
+
+        recons_features = self.feature_extract(recons)
+        input_features = self.feature_extract(input)
+
+        recons_loss = F.mse_loss(recons, input)
+
+        features_loss = 0.0
+        for (r, i) in zip(recons_features,input_features):
+            features_loss += F.mse_loss(r, i)
+
+        kld_loss = torch.mean(-0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp(), dim = 1), dim = 0)
+
+        loss = 0.5*(recons_loss + features_loss) + kld_weight * kld_loss
+
+        return loss
+
 
 if __name__ == '__main__':
     net = VAE(3,128)
