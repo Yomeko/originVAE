@@ -8,7 +8,7 @@ from torchvision import transforms
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 toPIL = transforms.ToPILImage()
 
-weight_path = 'params/vae.pth'
+weight_path = 'params/dfcvae.pth'
 data_path = '/root/autodl-tmp/celeba/img_align_celeba'
 
 full_dataset = CelebA(data_path)
@@ -23,7 +23,7 @@ if os.path.exists(weight_path):
 else:
     print('not loaded')
 
-loss_fun = VAELoss()
+loss_fun = DFCVAELoss()
 
 net.eval()
 total_loss = 0
@@ -66,7 +66,7 @@ with torch.no_grad():
                 k += 1
 
             img_out = toPIL(img_out)
-            img_out.save('recons.jpg')
+            img_out.save('recons_dfc.jpg')
 
 
 total_loss /= len(test_loader) * 32

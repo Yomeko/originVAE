@@ -4,6 +4,7 @@ import torch
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader, random_split
 from PIL import Image
+import pandas as pd
 
 CelebA_transforms=transforms.Compose([
     transforms.RandomHorizontalFlip(),
@@ -17,6 +18,7 @@ class CelebA(Dataset):
     def __init__(self,path):
         self.path=path
         self.name=os.listdir(path)
+        self.dataframe=pd.read_csv('list_attr_celeba.csv')
 
     def __len__(self):
         return len(self.name)
@@ -24,7 +26,8 @@ class CelebA(Dataset):
     def __getitem__(self, index):
         img_path=os.path.join(self.path,self.name[index])
         img=Image.open(img_path)
-        return CelebA_transforms(img)
+        cond=self.dataframe.iloc[index]
+        return CelebA_transforms(img),torch.Tensor(cond)
     
 
 def split_dataset(dataset: Dataset, train_ratio = 0.7):

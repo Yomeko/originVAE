@@ -122,6 +122,138 @@ class VAE(nn.Module):
         
         return self.forward(x)[0]
     
+class cVAE(nn.Module):
+
+    def __init__(self,
+                 in_channels: int,
+                 latent_dim: int,
+                 img_size: int = 64,
+                 num_classes: int = 40) -> None:
+        super(cVAE, self).__init__()
+
+        self.latent_dim=latent_dim
+        self.img_size=img_size
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        self.embed_class = nn.Linear(num_classes, img_size * img_size)
+        self.embed_data = nn.Conv2d(in_channels, in_channels, kernel_size = 1)
+
+        inC=in_channels+1
+        modules = []
+        hidden_dims = [32, 64, 128, 256, 512]
+
+        #encoder
+        for h_dim in hidden_dims:
+            modules.append(
+                nn.Sequential(
+                    nn.Conv2d(in_channels=inC, out_channels=h_dim,
+                              kernel_size=3, stride=2, padding=1),
+                    nn.BatchNorm2d(h_dim),
+                    nn.LeakyReLU()
+                )
+            )
+            inC = h_dim
+
+        self.encoder = nn.Sequential(*modules)
+        self.fc_mu = nn.Linear(hidden_dims[-1]*4, latent_dim)
+        self.fc_var = nn.Linear(hidden_dims[-1]*4, latent_dim)
+
+        #decoder
+        self.decoder_input = nn.Linear(latent_dim + num_classes, hidden_dims[-1]*4)
+        
+        modules = []
+        hidden_dims.reverse()
+
+        for i in range(len(hidden_dims) - 1):
+            modules.append(
+                nn.Sequential(
+                    nn.ConvTranspose2d(in_channels=hidden_dims[i],
+                                       out_channels=hidden_dims[i+1],
+                                       kernel_size=3,
+                                       stride=2,
+                                       padding=1,
+                                       output_padding=1),
+                    nn.BatchNorm2d(hidden_dims[i+1]),
+                    nn.LeakyReLU()
+                )
+            )
+
+        self.decoder = nn.Sequential(*modules)
+
+        self.final_layer = nn.Sequential(
+            nn.ConvTranspose2d(in_channels=hidden_dims[-1],
+                               out_channels=hidden_dims[-1],
+                               kernel_size=3,
+                               stride=2,
+                               padding=1,
+                               output_padding=1),
+            nn.BatchNorm2d(hidden_dims[-1]),
+            nn.LeakyReLU(),
+            nn.Conv2d(in_channels=hidden_dims[-1],
+                      out_channels=3,
+                      kernel_size=3,
+                      padding=1),
+            nn.Tanh()
+        )
+
+    def encode(self, input: torch.Tensor) -> List[torch.Tensor]:
+
+        result = self.encoder(input)
+        result = torch.flatten(result, start_dim=1)
+
+        mu=self.fc_mu(result)
+        log_var=self.fc_var(result)
+
+        return [mu,log_var]
+    
+    def decode(self, z: torch.Tensor) -> torch.Tensor:
+
+        # print(z.size())
+        result = self.decoder_input(z)
+        # print(result.size())
+        result = result.view(-1,512,2,2)
+        result = self.decoder(result)
+        result = self.final_layer(result)
+
+        return result
+    
+    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor):
+
+        
+        std = torch.exp(0.5 * logvar).to(self.device)
+        eps = torch.randn_like(std).to(self.device)
+        # print(std.size())
+
+        return eps * std + mu
+    
+    def forward(self, input: List[torch.Tensor]) -> List[torch.Tensor]:
+
+        embedded_class = self.embed_class(input[1])
+        embedded_class = embedded_class.view(-1, self.img_size, self.img_size).unsqueeze(1)
+        embedded_img = self.embed_data(input[0])
+
+        embedded_input = torch.cat([embedded_img, embedded_class], dim = 1)
+
+        mu, logvar = self.encode(embedded_input)
+        z = self.reparameterize(mu, logvar)
+        z = torch.cat([z, input[1]], dim = 1)
+        output = self.decode(z)
+
+        return [output, input[0], mu, logvar]
+    
+    def sample(self, num: int, y: torch.Tensor) -> torch.Tensor:
+
+        z = torch.randn(num, self.latent_dim).to(self.device)
+        z = torch.cat([z, y], dim = 1)
+
+        samples = self.decode(z)
+
+        return samples
+    
+    def reconstruct(self, x:List[torch.Tensor]) -> torch.Tensor:
+        
+        return self.forward(x)[0]
+    
 
 class VAELoss(nn.Module):
 
@@ -144,6 +276,7 @@ class VAELoss(nn.Module):
 
         return loss
     
+
 class DFCVAELoss(nn.Module):
 
     def __init__(self) -> None:

@@ -7,7 +7,7 @@ from vae import *
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 weight_path = 'params/vae.pth'
-data_path = 'img_align_celeba'
+data_path = '/root/autodl-tmp/celeba/img_align_celeba'
 
 full_dataset = CelebA(data_path)
 train_dataset, test_dataset = split_dataset(full_dataset, 0.8)
@@ -26,7 +26,7 @@ scheduler = optim.lr_scheduler.ExponentialLR(opt, gamma = 0.95)
 loss_fun = VAELoss()
 
 epoch = 1
-max_epoch = 100
+max_epoch = 10
 
 while True:
     for i,img in enumerate(train_loader):
@@ -42,8 +42,8 @@ while True:
         if (i + 1) % 250 == 0:
             print(f'{epoch}-{i+1}-train_loss ===>> {train_loss.item()}')
 
-    epoch += 1
     torch.save(net.state_dict(), weight_path)
     scheduler.step()
     if epoch == max_epoch:
         break
+    epoch += 1
